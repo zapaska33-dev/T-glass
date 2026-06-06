@@ -1,0 +1,3 @@
+aiogram==3.17.0
+aiohttp==3.11.12
+./tradernet_sdk-2.0.0.tar.gz
