@@ -2,14 +2,15 @@
 # -*- coding: utf-8 -*-
 
 """
-TECHSMART ORDER FLOW DETECTOR v19.1 - MAX VERSION
-Полностью на MAX Bot вместо Telegram
+T-GLASS ORDER FLOW DETECTOR v19.1 - MAX VERSION
 Адаптирован для T-Техно (TECHSMART)
+Файл: t-glass.py
 """
 
 import sys, os, asyncio, time
 from collections import deque
 
+# Добавляем текущую директорию в PATH
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from maxapi import Bot
@@ -28,7 +29,7 @@ from detectors import (
 
 logger, logger_trade, logger_ai = setup_logging()
 
-logger.warning(f"🚀 TECHSMART PROCESS START | pid={os.getpid()} | ticker={config.TICKER}")
+logger.warning(f"🚀 T-GLASS PROCESS START | pid={os.getpid()} | ticker={config.TICKER}")
 
 # ========== ГЛОБАЛЬНОЕ СОСТОЯНИЕ ==========
 bot = None  # MAX Bot instance
@@ -44,7 +45,7 @@ class Stats:
         self.book_updates = self.delta = 0
         self.detector_hits = {st.value: 0 for st in SignalType}
         self.duplicates_skipped = 0
-        self.total_cost = 0.0  # Стоимость AI запросов
+        self.total_cost = 0.0
 
 stats = Stats()
 last_trade_price = last_trade_counter = 0
@@ -61,7 +62,6 @@ delta_tracker = DeltaTracker()
 global_journal = DetectorJournal()
 
 # ========== ДЕТЕКТОРЫ ==========
-# (все детекторы остаются без изменений из предыдущей версии)
 
 def detect_absorption(j):
     recent = list(recent_trades)[-50:]
@@ -254,7 +254,6 @@ async def check_setup(price, volume, side):
                                         global_journal.get_components(),
                                         global_journal.get_signals(), bias)
         
-        # Обновляем стоимость
         if hasattr(ai_analyzer, 'vsegpt_client') and ai_analyzer.vsegpt_client:
             stats.total_cost = ai_analyzer.vsegpt_client.total_cost
         
@@ -267,7 +266,7 @@ async def send_signal(price, volume, score, delta, bias, res):
     stats.ai_ok += 1
     stats.alerts += 1
 
-    tick = 0.005  # Шаг цены для TECHSMART
+    tick = 0.005
     if res.direction == "LONG":
         stop = price - res.stop_ticks * tick
         target = price + res.take_ticks * tick
@@ -275,7 +274,7 @@ async def send_signal(price, volume, score, delta, bias, res):
         stop = price + res.stop_ticks * tick
         target = price - res.take_ticks * tick
 
-    msg = f"""🚨 **TECHSMART AI СИГНАЛ**
+    msg = f"""🚨 **T-GLASS AI СИГНАЛ**
 
 **{res.direction}** | Уверенность: **{res.confidence}%**
 
@@ -292,7 +291,7 @@ async def send_signal(price, volume, score, delta, bias, res):
 
 📝 **Причина:** {res.reason}
 
-#TECHSMART #Signal"""
+#TECHSMART #TGLASS #Signal"""
     
     await send_alert(bot, msg, f"signal_{int(time.time())}", command_handler)
     logger.warning(f"📤 ОТПРАВЛЕН | {res.direction} | {res.confidence}%")
@@ -342,6 +341,7 @@ async def health_server():
             return web.json_response({
                 "status": "ok", 
                 "version": "19.1", 
+                "name": "T-GLASS",
                 "ticker": config.TICKER, 
                 "trades": stats.trades, 
                 "delta": stats.delta,
@@ -363,7 +363,7 @@ async def main():
     global bot, core, command_handler, global_journal
     
     logger.warning("=" * 40)
-    logger.warning(f"🚀 TECHSMART v19.1 (MAX) | {config.TICKER} | Score={getattr(config, 'SETUP_SCORE_REQUIRED', 100)}")
+    logger.warning(f"🚀 T-GLASS v19.1 (MAX) | {config.TICKER} | Score={getattr(config, 'SETUP_SCORE_REQUIRED', 100)}")
     logger.warning("=" * 40)
     
     global_journal = DetectorJournal()
@@ -376,11 +376,9 @@ async def main():
         raise
     
     try:
-        # Инициализация MAX Bot вместо Telegram
         bot = Bot(token=config.MAX_BOT_TOKEN)
         logger.info("✅ MAX Bot initialized")
         
-        # Инициализация глобального бота для алертов
         chat_id = int(os.environ.get("MAX_CHAT_ID", "0"))
         init_max_bot(bot, chat_id)
         
@@ -388,22 +386,23 @@ async def main():
         logger.error(f"❌ MAX Bot init failed: {e}")
         raise
     
-    # Инициализация CommandHandler с поддержкой MAX
     command_handler = CommandHandler(bot, stats, config, ai_analyzer)
-    
-    # Запуск в фоне
     asyncio.create_task(command_handler.run())
     logger.info("✅ Command handler started")
     
-    # Отправка приветствия
     try:
         await bot.send_message(
             user_id=int(os.environ.get("MAX_CHAT_ID", "0")),
-            text=f"🟢 **TECHSMART DETECTOR v19.1 (MAX)**\n"
+            text=f"🟢 **T-GLASS DETECTOR v19.1 (MAX)**\n"
                  f"📊 Тикер: {config.TICKER}\n"
                  f"🎯 Score порог: {config.SETUP_SCORE_REQUIRED}\n"
                  f"🧠 AI режим: FULL\n\n"
-                 f"/help - список команд"
+                 f"📝 Доступные команды:\n"
+                 f"/status - статистика\n"
+                 f"/settings - настройки\n"
+                 f"/pause - пауза\n"
+                 f"/resume - возобновить\n"
+                 f"/help - справка"
         )
         logger.info("✅ Welcome message sent")
     except Exception as e:
