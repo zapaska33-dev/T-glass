@@ -13,9 +13,6 @@ services:
       python /t-glass.py
       "
 
-    volumes:
-      - ./:./
-
     ports:
       - "19944:80"
 
