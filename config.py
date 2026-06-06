@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import os
 
 # ========== TRADERNET ==========
@@ -6,7 +9,7 @@ PRIVATE_KEY = os.environ.get("TRADERNET_PRIVATE_KEY")
 
 # ========== MAX BOT (вместо Telegram) ==========
 MAX_BOT_TOKEN = os.environ.get("MAX_BOT_TOKEN")
-MAX_CHAT_ID = os.environ.get("MAX_CHAT_ID")  # ID пользователя/чата для отправки сигналов
+MAX_CHAT_ID = os.environ.get("MAX_CHAT_ID")
 MAX_API_URL = os.environ.get("MAX_API_URL", "https://api.max.ru/v1")
 
 # ========== VSEGPT AI ==========
@@ -43,12 +46,8 @@ SPOOF_SIZE_THRESHOLD = int(os.environ.get("SPOOF_SIZE_THRESHOLD", "3000"))
 ICEBERG_MIN_VOLUME = int(os.environ.get("ICEBERG_MIN_VOLUME", "500"))
 PRICE_RESPONSE_THRESHOLD = int(os.environ.get("PRICE_RESPONSE_THRESHOLD", "1000"))
 
-# ========== MAX COMMANDS (альтернатива Telegram) ==========
-# Команды будут обрабатываться через сообщения в MAX
-ALLOWED_COMMANDS = ['/pause', '/resume', '/status', '/settings', '/ai_mode', '/help', '/stats']
-
 print("=" * 50)
-print(f"📊 TECHSMART DETECTOR v19.1 | {TICKER}")
+print(f"📊 T-GLASS v19.1 | {TICKER}")
 print(f"   Setup Score Required: {SETUP_SCORE_REQUIRED}")
 print(f"   AI Confidence Required: {AI_CONFIDENCE_REQUIRED}%")
 print(f"   AI Cooldown: {AI_COOLDOWN_SECONDS}s")
