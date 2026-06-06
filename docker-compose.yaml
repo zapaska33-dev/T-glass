@@ -1,0 +1,67 @@
+version: '3.11'
+
+services:
+  t-glass:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: t-glass
+    restart: unless-stopped
+    
+      
+    volumes:
+      - t-glass-data:/data
+      - t-glass-logs:/data/logs
+    
+    environment:
+      # TraderNet
+      - TRADERNET_PUBLIC_KEY=${TRADERNET_PUBLIC_KEY}
+      - TRADERNET_PRIVATE_KEY=${TRADERNET_PRIVATE_KEY}
+      - TRADERNET_TICKER=TECHSMART
+      
+      # MAX Bot
+      - MAX_BOT_TOKEN=${MAX_BOT_TOKEN}
+      - MAX_CHAT_ID=${MAX_CHAT_ID}
+      
+      # VseGPT AI
+      - VSEGPT_API_KEY=${VSEGPT_API_KEY}
+      - VSEGPT_API_URL=https://api.vsegpt.ru/v1
+      - VSEGPT_MODEL=anthropic/claude-3-haiku
+      - VSEGPT_MAX_TOKENS=300
+      - VSEGPT_TEMPERATURE=0.2
+      
+      # Настройки детектора
+      - SETUP_SCORE_REQUIRED=40
+      - AI_CONFIDENCE_REQUIRED=80
+      - AI_COOLDOWN_SECONDS=120
+      - MIN_BIAS_FOR_AI=3
+      - MIN_DELTA_FOR_AI=5000
+      - MIN_DELTA_CHANGE_FOR_NEW_AI=3000
+      - MIN_BIAS_CHANGE_FOR_NEW_AI=1.0
+      
+      # Пороги TECHSMART
+      - MIN_PRINT_VOLUME=500
+      - MIN_DELTA_VOLUME=200
+      - DELTA_THRESHOLD=7000
+      - TAPE_SPEED_THRESHOLD=15
+      - ABSORPTION_THRESHOLD=2000
+      - BIG_WALL_SIZE=5000
+      - SPOOF_SIZE_THRESHOLD=3000
+      - ICEBERG_MIN_VOLUME=500
+      - PRICE_RESPONSE_THRESHOLD=1000
+      
+      # Python
+      - PYTHONUNBUFFERED=1
+      - PYTHONIOENCODING=utf-8
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  t-glass-data:
+    driver: local
+  t-glass-logs:
+    driver: local
