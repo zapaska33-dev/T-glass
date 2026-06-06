@@ -10,10 +10,11 @@ services:
     command: >
       sh -c "
       pip install --no-cache-dir aiohttp requests python-dotenv &&
-      python /t-glass.py
+      python /app/t-glass.py
       "
 
-   
+    volumes:
+      - ./:/app
 
     ports:
       - "19944:80"
