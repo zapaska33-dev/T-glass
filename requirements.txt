@@ -1,14 +1,9 @@
-# Core
-tradernet>=1.0.0
+# Устанавливаем tradernet из локального файла
+# Путь указывается относительно корня проекта
+./tradernet_sdk-2.0.0.tar.gz
 
-# MAX Bot
-maxapi>=1.0.0
-
-# AI
+# Другие зависимости
 requests>=2.31.0
-
-# Web
 aiohttp>=3.9.0
-
-# Utils
 python-dotenv>=1.0.0
+maxapi>=0.1.0
