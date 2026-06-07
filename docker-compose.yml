@@ -1,161 +1,20 @@
-version: '3.8'
+version: "3.8"
 
 services:
   t-glass:
-    image: python:3.10-slim
+    build: .
     container_name: tglass
+
     restart: unless-stopped
+
     ports:
-      - "8080:80"
+      - "19944:80"
+
     environment:
-      - PYTHONUNBUFFERED=1
-      - TRADERNET_TICKER=TECHSMART
-      - TRADERNET_PUBLIC_KEY=${TRADERNET_PUBLIC_KEY}
-      - TRADERNET_PRIVATE_KEY=${TRADERNET_PRIVATE_KEY}
-      - MAX_BOT_TOKEN=${MAX_BOT_TOKEN}
-      - MAX_CHAT_ID=${MAX_CHAT_ID}
-      - VSEGPT_API_KEY=${VSEGPT_API_KEY}
-    command: >
-      sh -c "
-      pip install --no-cache-dir aiohttp &&
-      python -c '
-import asyncio
-import os
-import json
-import time
-from datetime import datetime
-from collections import deque
-from aiohttp import web
-
-print(\"=\" * 50)
-print(\"🚀 T-GLASS v19.1 ORDER FLOW DETECTOR\")
-print(\"=\" * 50)
-
-TICKER = os.environ.get(\"TRADERNET_TICKER\", \"TECHSMART\")
-print(f\"✅ Ticker: {TICKER}\")
-
-class Stats:
-    def __init__(self):
-        self.start = time.time()
-        self.trades = 0
-        self.delta = 0
-        self.signals = 0
-        self.heartbeats = 0
-
-stats = Stats()
-recent_trades = deque(maxlen=1000)
-
-class DeltaTracker:
-    def __init__(self):
-        self.delta = 0
-    def update(self, volume, side):
-        if side == \"BUY\":
-            self.delta += volume
-        elif side == \"SELL\":
-            self.delta -= volume
-        return self.delta
-
-delta_tracker = DeltaTracker()
-
-def detect_delta():
-    if abs(stats.delta) >= 5000:
-        direction = \"BULLISH\" if stats.delta > 0 else \"BEARISH\"
-        return {\"type\": \"DELTA\", \"direction\": direction, \"score\": 40}
-    return None
-
-def calculate_score():
-    score = 0
-    bias = 0
-    signals = []
-    
-    d = detect_delta()
-    if d:
-        score += d[\"score\"]
-        if d[\"direction\"] == \"BULLISH\":
-            bias += d[\"score\"]
-        elif d[\"direction\"] == \"BEARISH\":
-            bias -= d[\"score\"]
-        signals.append(d)
-    
-    return score, bias, signals
-
-def process_trade(price, volume, side):
-    stats.trades += 1
-    stats.delta = delta_tracker.update(volume, side)
-    
-    recent_trades.append({
-        \"time\": time.time(),
-        \"price\": price,
-        \"volume\": volume,
-        \"side\": side
-    })
-    
-    score, bias, signals = calculate_score()
-    
-    print(f\"📊 Trade #{stats.trades}: {price:.2f} x {volume} {side} | Delta: {stats.delta:+,} | Score: {score}\")
-    
-    if score >= 40 and signals:
-        stats.signals += 1
-        direction = \"LONG\" if bias > 0 else \"SHORT\" if bias < 0 else \"NONE\"
-        print(f\"🎯 SIGNAL #{stats.signals}: {direction} | Score: {score} | Bias: {bias:+.1f}\")
-        print(f\"   Triggers: {[s[\"type\"] for s in signals]}\")
-
-async def health_check(request):
-    return web.json_response({
-        \"status\": \"ok\",
-        \"version\": \"19.1\",
-        \"name\": \"T-GLASS\",
-        \"ticker\": TICKER,
-        \"uptime\": time.time() - stats.start,
-        \"trades\": stats.trades,
-        \"delta\": stats.delta,
-        \"signals\": stats.signals,
-        \"timestamp\": datetime.now().isoformat()
-    })
-
-async def stats_endpoint(request):
-    return web.json_response({
-        \"trades\": stats.trades,
-        \"delta\": stats.delta,
-        \"signals\": stats.signals,
-        \"uptime\": time.time() - stats.start
-    })
-
-async def simulate_trades():
-    print(\"\\n📊 Demo simulation started...\")
-    demo_data = [
-        (100.00, 1500, \"BUY\"), (100.50, 2000, \"BUY\"), (101.00, 3000, \"BUY\"),
-        (100.80, 1000, \"SELL\"), (101.20, 2500, \"BUY\"), (101.50, 3500, \"BUY\"),
-        (101.30, 800, \"SELL\"), (101.80, 2800, \"BUY\"), (102.00, 4000, \"BUY\")
-    ]
-    for price, volume, side in demo_data:
-        await asyncio.sleep(3)
-        process_trade(price, volume, side)
-
-async def main():
-    app = web.Application()
-    app.router.add_get(\"/health\", health_check)
-    app.router.add_get(\"/stats\", stats_endpoint)
-    
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, \"0.0.0.0\", 80)
-    await site.start()
-    
-    print(\"\\n\" + \"=\" * 50)
-    print(\"✅ T-GLASS RUNNING\")
-    print(\"=\" * 50)
-    print(f\"🏥 Health: http://localhost:80/health\" )
-    print(f\"📈 Stats: http://localhost:80/stats\")
-    print(\"=\" * 50 + \"\\n\")
-    
-    asyncio.create_task(simulate_trades())
-    
-    while True:
-        await asyncio.sleep(60)
-        stats.heartbeats += 1
-        print(f\"💓 Heartbeat #{stats.heartbeats} | Trades: {stats.trades} | Delta: {stats.delta:+,} | Signals: {stats.signals}\")
-
-asyncio.run(main())
-'
-      "
+      PYTHONUNBUFFERED: "1"
+      TRADERNET_TICKER: "T"
+      TRADERNET_PUBLIC_KEY: ${TRADERNET_PUBLIC_KEY}
+      TRADERNET_PRIVATE_KEY: ${TRADERNET_PRIVATE_KEY}
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN}
+      MAX_CHAT_ID: ${MAX_CHAT_ID}
+      VSEGPT_API_KEY: ${VSEGPT_API_KEY}
