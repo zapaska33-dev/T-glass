@@ -1,26 +1,23 @@
 version: "3.8"
 
 services:
-  t-glass:
-    build:
-      context: ./app
-      dockerfile: Dockerfile
+tglass:
+image: python:3.10-slim
+container_name: tglass
+restart: unless-stopped
 
-    container_name: tglass
+working_dir: /app
 
-    restart: unless-stopped
+ports:
+  - "19944:80"
 
-    ports:
-      - "19944:80"
+environment:
+  PYTHONUNBUFFERED: "1"
+  TRADERNET_TICKER: "T"
+  TRADERNET_PUBLIC_KEY: ${TRADERNET_PUBLIC_KEY}
+  TRADERNET_PRIVATE_KEY: ${TRADERNET_PRIVATE_KEY}
+  MAX_BOT_TOKEN: ${MAX_BOT_TOKEN}
+  MAX_CHAT_ID: ${MAX_CHAT_ID}
+  VSEGPT_API_KEY: ${VSEGPT_API_KEY}
 
-    environment:
-      PYTHONUNBUFFERED: "1"
-      TRADERNET_TICKER: "T"
-
-      TRADERNET_PUBLIC_KEY: ${TRADERNET_PUBLIC_KEY}
-      TRADERNET_PRIVATE_KEY: ${TRADERNET_PRIVATE_KEY}
-
-      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN}
-      MAX_CHAT_ID: ${MAX_CHAT_ID}
-
-      VSEGPT_API_KEY: ${VSEGPT_API_KEY}
+command:
