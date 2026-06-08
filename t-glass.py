@@ -1,68 +1,42 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import asyncio
-import os
+"""
+T-GLASS ORDER FLOW DETECTOR v19.1 - MAX VERSION
+Боевая версия с полной системой детекторов
+"""
+
 import sys
+import os
+import asyncio
 import time
-import json
-import logging
-from datetime import datetime
 from collections import deque
 
-# ========== НАСТРОЙКА ЛОГИРОВАНИЯ (в корне) ==========
-def setup_logging():
-    """Простая настройка логирования без внешних модулей"""
-    # Создаем директорию для логов если нужно
-    log_dir = '/data/logs'
-    try:
-        os.makedirs(log_dir, exist_ok=True)
-    except:
-        pass
-    
-    # Формат логов
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    
-    # Основной логгер
-    logger = logging.getLogger('tglass')
-    logger.setLevel(logging.INFO)
-    
-    # Консольный handler
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
-    
-    # Файловый handler (если есть доступ)
-    try:
-        file_handler = logging.FileHandler(f'{log_dir}/tglass.log')
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
-    except:
-        pass
-    
-    # Логгер для трейдов
-    logger_trade = logging.getLogger('trade')
-    logger_trade.setLevel(logging.INFO)
-    logger_trade.addHandler(console_handler)
-    
-    # Логгер для AI
-    logger_ai = logging.getLogger('ai')
-    logger_ai.setLevel(logging.INFO)
-    logger_ai.addHandler(console_handler)
-    
-    return logger, logger_trade, logger_ai
+# Добавляем текущую директорию в PATH
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from maxapi import Bot
+from tradernet import Core, TradernetWebsocket
+import config
+from utils import setup_logging, send_alert, init_max_bot
+from bot import CommandHandler
+from ai_analyzer import ai_analyzer
+from detectors import (
+    OrderbookProcessor, SpoofDetector, IcebergDetector,
+    TapeSpeedDetector, DeltaTracker, DetectorJournal, MAX_SCORE
+)
 
 # Инициализация логов
 logger, logger_trade, logger_ai = setup_logging()
 
-# ========== КОНФИГУРАЦИЯ ==========
-TICKER = os.environ.get('TRADERNET_TICKER', 'TECHSMART')
-MAX_SCORE = 100
+logger.warning(f"🚀 T-GLASS v19.1 START | pid={os.getpid()} | ticker={config.TICKER}")
 
-# ========== СТАТИСТИКА ==========
+# ========== ГЛОБАЛЬНОЕ СОСТОЯНИЕ ==========
+bot = None
+core = None
+command_handler = None
+recent_trades = deque(maxlen=10000)
+
 class Stats:
     def __init__(self):
         self.start = time.time()
@@ -79,219 +53,404 @@ class Stats:
         self.total_cost = 0.0
 
 stats = Stats()
-recent_trades = deque(maxlen=10000)
+last_trade_price = 0
+last_processed_trade_id = 0
+last_processed_trade_price = 0
+last_processed_trade_volume = 0
+
+# Инициализация детекторов
+orderbook = OrderbookProcessor(stats)
+spoof_detector = SpoofDetector()
+iceberg_detector = IcebergDetector()
+tape_detector = TapeSpeedDetector()
+delta_tracker = DeltaTracker()
+global_journal = DetectorJournal()
+
 
 # ========== ДЕТЕКТОРЫ ==========
-class SignalType:
-    ABSORPTION = "absorption"
-    PRICE_RESPONSE = "price_response"
-    ICEBERG = "iceberg"
-    IMBALANCE = "imbalance"
-    SPOOFING = "spoofing"
-    DELTA = "delta"
-    WALL = "wall"
-    LIQUIDITY_SHIFT = "liquidity_shift"
-    TAPE_SPEED = "tape_speed"
-    VOLUME_CLUSTER = "volume_cluster"
-    TRADE_VELOCITY = "trade_velocity"
 
-class DetectorJournal:
-    def __init__(self):
-        self.detectors = {}
-        self.bias = 0
-    
-    def set(self, signal_type, value, details, direction):
-        self.detectors[signal_type] = {
-            'value': value,
-            'details': details,
-            'direction': direction,
-            'timestamp': time.time()
-        }
-        logger.warning(f"🔔 {signal_type}: {details}")
-    
-    def calc(self, delta):
-        score = 0
-        bullish = 0
-        bearish = 0
-        now = time.time()
-        
-        weights = {
-            SignalType.DELTA: 40,
-            SignalType.SPOOFING: 30,
-            SignalType.ABSORPTION: 10,
-            SignalType.PRICE_RESPONSE: 15,
-            SignalType.ICEBERG: 5,
-            SignalType.IMBALANCE: 10,
-            SignalType.WALL: 15,
-            SignalType.LIQUIDITY_SHIFT: 8,
-            SignalType.TAPE_SPEED: 5,
-            SignalType.VOLUME_CLUSTER: 7,
-            SignalType.TRADE_VELOCITY: 5,
-        }
-        
-        for st, det in self.detectors.items():
-            if now - det['timestamp'] < 10:  # TTL 10 сек
-                weight = weights.get(st, 10)
-                score += weight
-                if det['direction'] == 'BULLISH':
-                    bullish += weight
-                elif det['direction'] == 'BEARISH':
-                    bearish += weight
-        
-        self.bias = (bullish - bearish) / max(score, 1) * 100
-        return min(score, MAX_SCORE)
-    
-    def get_components(self):
-        return {}
-    
-    def get_signals(self):
-        return list(self.detectors.keys())
+def detect_absorption(j):
+    recent = list(recent_trades)[-50:]
+    if len(recent) < 20:
+        return
+    sell = sum(t.get("volume", 0) for t in recent if t.get("side") == "SELL")
+    buy = sum(t.get("volume", 0) for t in recent if t.get("side") == "BUY")
+    prices = [t.get("price", 0) for t in recent]
+    move = max(prices) - min(prices) if len(prices) >= 2 else 0
+    thr = getattr(config, 'ABSORPTION_THRESHOLD', 2000)
+    if sell > thr and move < 0.02:
+        j.set("ABSORPTION", {"type": "BUYER", "sell_vol": sell}, f"S={sell:,}", "BULLISH")
+        logger.warning("🔥 ABSORPTION (buyer)")
+    elif buy > thr and move < 0.02:
+        j.set("ABSORPTION", {"type": "SELLER", "buy_vol": buy}, f"B={buy:,}", "BEARISH")
+        logger.warning("🔥 ABSORPTION (seller)")
 
-def detect_delta(journal):
-    if abs(stats.delta) >= 7000:
-        direction = "BULLISH" if stats.delta > 0 else "BEARISH"
-        journal.set(SignalType.DELTA, {"delta": stats.delta}, f"Δ={stats.delta:+,}", direction)
-        return True
-    return False
 
-def process_trade(price, volume, side):
-    global stats
-    
-    stats.trades += 1
-    
-    # Обновление дельты
-    if side == "BUY":
-        stats.delta += volume
-    elif side == "SELL":
-        stats.delta -= volume
-    
-    # Сохраняем сделку
-    recent_trades.append({
-        'time': time.time(),
-        'price': price,
-        'volume': volume,
-        'side': side
-    })
-    
-    # Запуск детекторов
-    journal = DetectorJournal()
-    detect_delta(journal)
-    
-    score = journal.calc(stats.delta)
-    bias = journal.bias
-    
-    logger_trade.info(f"Trade #{stats.trades}: {price:.4f} x {volume} {side} | Δ={stats.delta:+,}")
-    logger.info(f"🎯 Score: {score}/{MAX_SCORE} | Bias: {bias:+.1f}")
-    
-    # Проверка сигнала
-    required_score = int(os.environ.get('SETUP_SCORE_REQUIRED', 40))
-    if score >= required_score:
-        stats.qualified += 1
-        direction = "LONG" if bias > 0 else "SHORT" if bias < 0 else "NONE"
-        logger.warning(f"🚨 SIGNAL: {direction} | Score={score} | Bias={bias:+.1f} | Δ={stats.delta:+,}")
-        
-        # Отправка в MAX (если настроен)
-        max_token = os.environ.get('MAX_BOT_TOKEN')
-        if max_token and direction != "NONE":
-            send_signal(price, volume, direction, score, bias)
+def detect_price_response(j):
+    recent = list(recent_trades)[-100:]
+    if len(recent) < 30:
+        return
+    sell = sum(t.get("volume", 0) for t in recent if t.get("side") == "SELL")
+    buy = sum(t.get("volume", 0) for t in recent if t.get("side") == "BUY")
+    prices = [t.get("price", 0) for t in recent]
+    move = prices[-1] - prices[0] if len(prices) >= 2 else 0
+    thr = getattr(config, 'PRICE_RESPONSE_THRESHOLD', 1000)
+    if sell > thr and move >= -0.01:
+        j.set("PRICE_RESPONSE", {"direction": "BULLISH", "sell_vol": sell}, f"S={sell:,}", "BULLISH")
+        logger.warning("📊 PRICE RESPONSE (bullish)")
+    elif buy > thr and move <= 0.01:
+        j.set("PRICE_RESPONSE", {"direction": "BEARISH", "buy_vol": buy}, f"B={buy:,}", "BEARISH")
+        logger.warning("📊 PRICE RESPONSE (bearish)")
 
-def send_signal(price, volume, direction, score, bias):
-    """Отправка сигнала в MAX Bot"""
+
+def detect_iceberg(j, volume):
+    thr = getattr(config, 'ICEBERG_MIN_VOLUME', 500)
+    if volume >= thr:
+        j.set("ICEBERG", {"volume": volume}, f"V={volume:,}", "")
+        logger.warning(f"🧊 ICEBERG {volume}")
+
+
+def detect_imbalance(j):
+    if orderbook.ask_size == 0:
+        return
+    ratio = orderbook.bid_size / orderbook.ask_size
+    if ratio >= 2.0:
+        j.set("IMBALANCE", {"dominant": "BID", "ratio": ratio}, f"R={ratio:.2f}", "BULLISH")
+        logger.warning(f"⚖️ IMBALANCE BID")
+    elif ratio <= 0.5:
+        j.set("IMBALANCE", {"dominant": "ASK", "ratio": ratio}, f"R={ratio:.2f}", "BEARISH")
+        logger.warning(f"⚖️ IMBALANCE ASK")
+
+
+def detect_spoofing_wrapper(j):
+    return spoof_detector.detect(orderbook.prev_bids, orderbook.prev_asks,
+                                 orderbook.curr_bids, orderbook.curr_asks, j, logger)
+
+
+def detect_delta(j):
+    thr = getattr(config, 'DELTA_THRESHOLD', 7000)
+    if abs(stats.delta) >= thr:
+        bias_dir = "BULLISH" if stats.delta > 0 else "BEARISH"
+        j.set("DELTA", {"delta": stats.delta}, f"Δ={stats.delta:+,}", bias_dir)
+        logger.warning(f"📈 DELTA {stats.delta:+,}")
+
+
+def detect_wall(j):
+    sz = getattr(config, 'BIG_WALL_SIZE', 5000)
+    for p, v in orderbook.curr_bids.items():
+        if v >= sz:
+            j.set("WALL", {"side": "BID", "price": p, "size": v}, f"BID {p:.4f}", "BULLISH")
+            logger.warning(f"🧱 WALL BID")
+            return
+    for p, v in orderbook.curr_asks.items():
+        if v >= sz:
+            j.set("WALL", {"side": "ASK", "price": p, "size": v}, f"ASK {p:.4f}", "BEARISH")
+            logger.warning(f"🧱 WALL ASK")
+            return
+
+
+def detect_liquidity_shift(j):
+    if not hasattr(detect_liquidity_shift, "last_bid"):
+        detect_liquidity_shift.last_bid = orderbook.bid_size
+        detect_liquidity_shift.last_ask = orderbook.ask_size
+        return
+    bch = abs(orderbook.bid_size - detect_liquidity_shift.last_bid) / max(detect_liquidity_shift.last_bid, 1)
+    ach = abs(orderbook.ask_size - detect_liquidity_shift.last_ask) / max(detect_liquidity_shift.last_ask, 1)
+    detect_liquidity_shift.last_bid = orderbook.bid_size
+    detect_liquidity_shift.last_ask = orderbook.ask_size
+    if bch > 0.5:
+        j.set("LIQUIDITY_SHIFT", {"direction": "BID_SHIFT", "change": bch}, f"BID ch={bch*100:.0f}%", "BULLISH")
+        logger.warning(f"🌊 LIQUIDITY SHIFT BID")
+    elif ach > 0.5:
+        j.set("LIQUIDITY_SHIFT", {"direction": "ASK_SHIFT", "change": ach}, f"ASK ch={ach*100:.0f}%", "BEARISH")
+        logger.warning(f"🌊 LIQUIDITY SHIFT ASK")
+
+
+def detect_tape_speed_wrapper(j, ts):
+    tape_detector.update(j, logger)
+
+
+def detect_volume_cluster(j):
+    now = time.time()
+    recent = [t for t in recent_trades if now - t.get("time", 0) <= 10]
+    minv = getattr(config, 'MIN_PRINT_VOLUME', 500)
+    large = [t for t in recent if t.get("volume", 0) >= minv / 2]
+    if len(large) >= 3:
+        j.set("VOLUME_CLUSTER", {"cluster_size": len(large)}, f"{len(large)} prints", "")
+        logger.warning(f"📦 VOLUME CLUSTER {len(large)}")
+
+
+def detect_trade_velocity(j):
+    now = time.time()
+    recent = [t for t in recent_trades if now - t.get("time", 0) <= 3]
+    vel = len(recent) / 3
+    if vel >= getattr(config, 'TAPE_SPEED_THRESHOLD', 15):
+        j.set("TRADE_VELOCITY", {"velocity": vel}, f"{vel:.1f} t/s", "")
+        logger.warning(f"🏃 TRADE VELOCITY {vel:.1f}")
+
+
+# ========== ОБРАБОТКА ==========
+
+async def process_quote(data):
+    global last_trade_price, last_processed_trade_id
+    global last_processed_trade_price, last_processed_trade_volume
+
     try:
-        stats.alerts += 1
-        stats.ai_ok += 1
-        
-        tick = 0.005
-        if direction == "LONG":
-            stop = price - 20 * tick
-            target = price + 40 * tick
-        else:
-            stop = price + 20 * tick
-            target = price - 40 * tick
-        
-        msg = f"""🚨 T-GLASS СИГНАЛ
-{direction} | Уверенность: 85%
-Оценка: {score} | Смещение: {bias:+.1f} | Дельта: {stats.delta:+,}
-Вход: {price:.4f} | Стоп: {stop:.4f} | Цель: {target:.4f}"""
-        
-        logger.warning(f"📤 {msg}")
-        # Здесь реальная отправка в MAX API
-        
-    except Exception as e:
-        logger.error(f"Send error: {e}")
+        ltp = data.get("ltp")
+        lts = data.get("lts")
+        trade_counter = data.get("trades")
 
-# ========== HTTP СЕРВЕР ==========
-async def start_health_server():
-    """Запуск health check сервера"""
+        if data.get("init") == 1:
+            return
+        if ltp is None:
+            return
+        if lts is None or lts == 0:
+            return
+
+        price, volume = float(ltp), int(lts)
+        if price <= 0 or volume <= 0:
+            return
+
+        # Защита от дублирования
+        if trade_counter is not None:
+            if trade_counter <= last_processed_trade_id:
+                stats.duplicates_skipped += 1
+                return
+            last_processed_trade_id = trade_counter
+        elif price == last_processed_trade_price and volume == last_processed_trade_volume:
+            stats.duplicates_skipped += 1
+            return
+
+        last_processed_trade_price = price
+        last_processed_trade_volume = volume
+
+        # Определяем сторону
+        side = "UNKNOWN"
+        if last_trade_price > 0:
+            side = "BUY" if price > last_trade_price else "SELL" if price < last_trade_price else "UNKNOWN"
+        last_trade_price = price
+
+        stats.trades += 1
+        logger_trade.info(f"T #{stats.trades} {price:.4f} {volume} {side}")
+
+        recent_trades.append({"time": time.time(), "price": price, "volume": volume, "side": side})
+
+        min_delta = getattr(config, 'MIN_DELTA_VOLUME', 200)
+        if volume >= min_delta:
+            signed = volume if side == "BUY" else (-volume if side == "SELL" else 0)
+            stats.delta = delta_tracker.update(signed)
+
+        await check_setup(price, volume, side)
+    except Exception as e:
+        logger.error(f"Quote error: {e}")
+
+
+async def check_setup(price, volume, side):
+    global global_journal
+
+    j = DetectorJournal()
+    ts = time.time()
+
+    detect_absorption(j)
+    detect_price_response(j)
+    detect_iceberg(j, volume)
+    detect_imbalance(j)
+    detect_spoofing_wrapper(j)
+    detect_delta(j)
+    detect_wall(j)
+    detect_liquidity_shift(j)
+    detect_tape_speed_wrapper(j, ts)
+    detect_volume_cluster(j)
+    detect_trade_velocity(j)
+
+    # Обновляем глобальный журнал
+    for st, det in j.detectors.items():
+        if det.detected:
+            global_journal.set(st, det.value, det.details, det.direction)
+
+    score = global_journal.calc(stats.delta)
+    bias = global_journal.bias
+    percent = int(score / MAX_SCORE * 100) if MAX_SCORE > 0 else 0
+
+    logger.warning(f"🎯 SCORE={score}/{MAX_SCORE}({percent}%) BIAS={bias:+.2f} Δ={stats.delta:+,}")
+
+    required = getattr(config, 'SETUP_SCORE_REQUIRED', 40)
+    if score >= required:
+        stats.qualified += 1
+        res = await ai_analyzer.analyze(price, volume, score, stats.delta, 0,
+                                        global_journal.get_components(),
+                                        global_journal.get_signals(), bias)
+
+        if hasattr(ai_analyzer, 'vsegpt_client') and ai_analyzer.vsegpt_client:
+            stats.total_cost = ai_analyzer.vsegpt_client.total_cost
+
+        if res and res.direction != "NONE" and res.confidence >= getattr(config, 'AI_CONFIDENCE_REQUIRED', 80):
+            await send_signal(price, volume, score, stats.delta, bias, res)
+
+
+async def send_signal(price, volume, score, delta, bias, res):
+    global bot, command_handler
+    percent = int(score / MAX_SCORE * 100) if MAX_SCORE > 0 else 0
+    stats.ai_ok += 1
+    stats.alerts += 1
+
+    tick = getattr(config, 'PRICE_TICK', 0.005)
+    if res.direction == "LONG":
+        stop = price - res.stop_ticks * tick
+        target = price + res.take_ticks * tick
+    else:
+        stop = price + res.stop_ticks * tick
+        target = price - res.take_ticks * tick
+
+    msg = f"""🚨 **T-GLASS AI СИГНАЛ**
+
+**{res.direction}** | Уверенность: **{res.confidence}%**
+
+📊 **Параметры:**
+• Оценка сетапа: {score} ({percent}%)
+• Смещение (bias): {bias:+.1f}
+• Дельта: {delta:+,}
+
+💹 **Уровни:**
+• Вход: {price:.4f}
+• Стоп: {stop:.4f}
+• Цель: {target:.4f}
+• Риск/Прибыль: {res.take_ticks / res.stop_ticks:.1f}
+
+📝 **Причина:** {res.reason}
+
+#T-GLASS #{config.TICKER}"""
+
+    if bot and command_handler and not command_handler.is_bot_paused():
+        await send_alert(bot, msg, f"signal_{int(time.time())}", command_handler)
+        logger.warning(f"📤 SIGNAL SENT | {res.direction} | {res.confidence}%")
+
+
+# ========== WEBSOCKET ==========
+
+async def websocket_loop():
+    global core
+    logger.info(f"Using ticker: [{config.TICKER}]")
+    reconnect_delay = 1
+
+    while True:
+        try:
+            async with TradernetWebsocket(core) as ws:
+                logger.info(f"✅ WebSocket connected for {config.TICKER}")
+                reconnect_delay = 1
+
+                async def handle_quotes():
+                    async for data in ws.quotes(config.TICKER):
+                        if data:
+                            await process_quote(data)
+
+                async def handle_orderbook():
+                    async for data in ws.market_depth(config.TICKER):
+                        if data:
+                            stats.book_updates += 1
+                            bids = data.get("bids", [])
+                            asks = data.get("asks", [])
+                            if bids or asks:
+                                orderbook.update(bids, asks, time.time())
+
+                await asyncio.gather(handle_quotes(), handle_orderbook())
+
+        except Exception as e:
+            logger.error(f"WebSocket error: {e}, reconnecting in {reconnect_delay}s")
+            await asyncio.sleep(reconnect_delay)
+            reconnect_delay = min(reconnect_delay * 2, 60)
+
+
+# ========== СТАТИСТИКА ==========
+
+async def stats_loop():
+    while True:
+        await asyncio.sleep(60)
+        rt = int(time.time() - stats.start)
+        logger.info(f"📊 STATS | {rt}s | T={stats.trades} | B={stats.book_updates} | "
+                    f"Δ={stats.delta:+,} | Q={stats.qualified} | A={stats.alerts} | "
+                    f"AI req={stats.ai_req} ok={stats.ai_ok} no={stats.ai_no} | "
+                    f"DUP={stats.duplicates_skipped} | COST=${stats.total_cost:.6f}")
+
+
+# ========== HEALTH ==========
+
+async def health_server():
     try:
         from aiohttp import web
-        
+
         async def health(request):
             return web.json_response({
                 "status": "ok",
                 "version": "19.1",
                 "name": "T-GLASS",
-                "ticker": TICKER,
-                "uptime": time.time() - stats.start,
+                "ticker": config.TICKER,
                 "trades": stats.trades,
                 "delta": stats.delta,
-                "signals": stats.alerts,
-                "timestamp": datetime.now().isoformat()
+                "alerts": stats.alerts,
+                "duplicates": stats.duplicates_skipped,
+                "total_cost": stats.total_cost,
+                "uptime": time.time() - stats.start
             })
-        
+
         app = web.Application()
         app.router.add_get("/health", health)
-        app.router.add_get("/", health)
-        
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, "0.0.0.0", 80)
         await site.start()
-        
-        logger.info("🏥 Health check: http://localhost:80/health")
-        return True
-    except ImportError:
-        logger.warning("aiohttp not installed")
-        return False
+        logger.info("🏥 Health check: http://0.0.0.0:80/health")
+        await asyncio.Event().wait()
     except Exception as e:
         logger.error(f"Health server error: {e}")
-        return False
 
-# ========== СИМУЛЯЦИЯ ==========
-async def simulate_trades():
-    """Симуляция сделок для теста"""
-    logger.info("📊 Demo mode: simulating trades...")
-    
-    demo_data = [
-        (100.00, 1500, "BUY"), (100.50, 2000, "BUY"), (101.00, 3000, "BUY"),
-        (100.80, 1000, "SELL"), (101.20, 2500, "BUY"), (101.50, 3500, "BUY"),
-        (101.30, 800, "SELL"), (101.80, 2800, "BUY"), (102.00, 4000, "BUY"),
-        (101.90, 500, "SELL"), (102.20, 3200, "BUY"), (102.50, 4500, "BUY"),
-    ]
-    
-    for price, volume, side in demo_data:
-        await asyncio.sleep(3)
-        process_trade(price, volume, side)
 
-# ========== ОСНОВНАЯ ФУНКЦИЯ ==========
+# ========== MAIN ==========
+
 async def main():
+    global bot, core, command_handler, global_journal
+
     logger.warning("=" * 50)
-    logger.warning(f"🚀 T-GLASS v19.1 | {TICKER}")
+    logger.warning(f"🚀 T-GLASS v19.1 | {config.TICKER} | SCORE={getattr(config, 'SETUP_SCORE_REQUIRED', 40)}")
     logger.warning("=" * 50)
-    
-    # Запуск health сервера
-    await start_health_server()
-    
-    # Запуск симуляции
-    asyncio.create_task(simulate_trades())
-    
-    # Основной цикл
-    counter = 0
-    while True:
-        await asyncio.sleep(60)
-        counter += 1
-        uptime = int(time.time() - stats.start)
-        logger.info(f"💓 Heartbeat #{counter} | Uptime: {uptime}s | Trades: {stats.trades} | Δ={stats.delta:+,} | Signals: {stats.alerts}")
+
+    global_journal = DetectorJournal()
+
+    try:
+        core = Core(config.PUBLIC_KEY, config.PRIVATE_KEY)
+        logger.info("✅ Core initialized")
+    except Exception as e:
+        logger.error(f"❌ Core init failed: {e}")
+        raise
+
+    try:
+        bot = Bot(token=config.MAX_BOT_TOKEN)
+        logger.info("✅ MAX Bot initialized")
+        chat_id = int(os.environ.get("MAX_CHAT_ID", "0"))
+        init_max_bot(bot, chat_id)
+    except Exception as e:
+        logger.error(f"❌ MAX Bot init failed: {e}")
+        raise
+
+    command_handler = CommandHandler(bot, stats, config, ai_analyzer)
+    asyncio.create_task(command_handler.run())
+    logger.info("✅ Command handler started")
+
+    try:
+        await bot.send_message(
+            user_id=int(os.environ.get("MAX_CHAT_ID", "0")),
+            text=f"🟢 **T-GLASS v19.1**\n"
+                 f"📊 Тикер: {config.TICKER}\n"
+                 f"🎯 Score порог: {getattr(config, 'SETUP_SCORE_REQUIRED', 40)}\n"
+                 f"🧠 AI режим: FULL\n\n"
+                 f"📝 /help - команды"
+        )
+        logger.info("✅ Welcome message sent")
+    except Exception as e:
+        logger.error(f"Welcome message error: {e}")
+
+    await asyncio.gather(websocket_loop(), stats_loop(), health_server())
+
 
 if __name__ == "__main__":
     try:

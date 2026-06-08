@@ -7,10 +7,9 @@ import os
 PUBLIC_KEY = os.environ.get("TRADERNET_PUBLIC_KEY")
 PRIVATE_KEY = os.environ.get("TRADERNET_PRIVATE_KEY")
 
-# ========== MAX BOT (вместо Telegram) ==========
+# ========== MAX BOT ==========
 MAX_BOT_TOKEN = os.environ.get("MAX_BOT_TOKEN")
 MAX_CHAT_ID = os.environ.get("MAX_CHAT_ID")
-MAX_API_URL = os.environ.get("MAX_API_URL", "https://api.max.ru/v1")
 
 # ========== VSEGPT AI ==========
 VSEGPT_API_KEY = os.environ.get("VSEGPT_API_KEY")
@@ -35,7 +34,7 @@ MIN_DELTA_FOR_AI = int(os.environ.get("MIN_DELTA_FOR_AI", "5000"))
 MIN_DELTA_CHANGE_FOR_NEW_AI = int(os.environ.get("MIN_DELTA_CHANGE_FOR_NEW_AI", "3000"))
 MIN_BIAS_CHANGE_FOR_NEW_AI = float(os.environ.get("MIN_BIAS_CHANGE_FOR_NEW_AI", "1.0"))
 
-# ========== ПОРОГИ ДЛЯ TECHSMART ==========
+# ========== ПОРОГИ ==========
 MIN_PRINT_VOLUME = int(os.environ.get("MIN_PRINT_VOLUME", "500"))
 MIN_DELTA_VOLUME = int(os.environ.get("MIN_DELTA_VOLUME", "200"))
 DELTA_THRESHOLD = int(os.environ.get("DELTA_THRESHOLD", "7000"))
@@ -45,17 +44,16 @@ BIG_WALL_SIZE = int(os.environ.get("BIG_WALL_SIZE", "5000"))
 SPOOF_SIZE_THRESHOLD = int(os.environ.get("SPOOF_SIZE_THRESHOLD", "3000"))
 ICEBERG_MIN_VOLUME = int(os.environ.get("ICEBERG_MIN_VOLUME", "500"))
 PRICE_RESPONSE_THRESHOLD = int(os.environ.get("PRICE_RESPONSE_THRESHOLD", "1000"))
+PRICE_TICK = float(os.environ.get("PRICE_TICK", "0.005"))
 
 print("=" * 50)
 print(f"📊 T-GLASS v19.1 | {TICKER}")
-print(f"   Setup Score Required: {SETUP_SCORE_REQUIRED}")
-print(f"   AI Confidence Required: {AI_CONFIDENCE_REQUIRED}%")
-print(f"   AI Cooldown: {AI_COOLDOWN_SECONDS}s")
+print(f"   SCORE Required: {SETUP_SCORE_REQUIRED}")
+print(f"   AI Confidence: {AI_CONFIDENCE_REQUIRED}%")
 print(f"   AI Model: {VSEGPT_MODEL if VSEGPT_API_KEY else 'FALLBACK'}")
 print(f"   MAX Bot: {'✅' if MAX_BOT_TOKEN else '❌'}")
 print("-" * 30)
-print(f"   MIN_PRINT_VOLUME: {MIN_PRINT_VOLUME} акций")
-print(f"   MIN_DELTA_VOLUME: {MIN_DELTA_VOLUME} акций")
-print(f"   DELTA_THRESHOLD: {DELTA_THRESHOLD} акций")
-print(f"   TAPE_SPEED_THRESHOLD: {TAPE_SPEED_THRESHOLD} сделок/сек")
+print(f"   MIN_PRINT_VOLUME: {MIN_PRINT_VOLUME}")
+print(f"   DELTA_THRESHOLD: {DELTA_THRESHOLD}")
+print(f"   TAPE_SPEED_THRESHOLD: {TAPE_SPEED_THRESHOLD}")
 print("=" * 50)
