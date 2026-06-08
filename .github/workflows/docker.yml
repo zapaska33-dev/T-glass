@@ -27,4 +27,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: zapaska33/mybot:latest
+          tags: zapaska33/zapaska33:latest
