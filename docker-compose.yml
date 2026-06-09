@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   tglass:
-    image: python:3.10-slim
+    build: .
     container_name: tglass
     restart: unless-stopped
     ports:
@@ -10,17 +10,6 @@ services:
     volumes:
       - app:/app
       - app:/data
-    working_dir: /app
     environment:
       - PYTHONUNBUFFERED=1
       - TRADERNET_TICKER=TECHSMART
-    command: >
-      sh -c "
-        pip install --no-cache-dir tradernet aiohttp requests python-dotenv platformdirs maxapi &&
-        python t-glass.py
-      "
-
-volumes:
-  app:
-    external: true
-    name: app
