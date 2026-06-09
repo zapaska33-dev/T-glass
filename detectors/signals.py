@@ -2,39 +2,56 @@
 # -*- coding: utf-8 -*-
 
 import time
+from enum import Enum
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-# Веса детекторов (сумма = 150)
+
+class SignalType(Enum):
+    """Типы сигналов детекторов"""
+    ABSORPTION = "absorption"
+    PRICE_RESPONSE = "price_response"
+    ICEBERG = "iceberg"
+    IMBALANCE = "imbalance"
+    SPOOFING = "spoofing"
+    DELTA = "delta"
+    WALL = "wall"
+    LIQUIDITY_SHIFT = "liquidity_shift"
+    TAPE_SPEED = "tape_speed"
+    VOLUME_CLUSTER = "volume_cluster"
+    TRADE_VELOCITY = "trade_velocity"
+
+
+# Веса детекторов
 WEIGHTS = {
-    "DELTA": 40,
-    "SPOOFING": 30,
-    "ABSORPTION": 10,
-    "PRICE_RESPONSE": 15,
-    "ICEBERG": 5,
-    "IMBALANCE": 10,
-    "WALL": 15,
-    "LIQUIDITY_SHIFT": 8,
-    "TAPE_SPEED": 5,
-    "VOLUME_CLUSTER": 7,
-    "TRADE_VELOCITY": 5,
+    SignalType.DELTA: 40,
+    SignalType.SPOOFING: 30,
+    SignalType.ABSORPTION: 10,
+    SignalType.PRICE_RESPONSE: 15,
+    SignalType.ICEBERG: 5,
+    SignalType.IMBALANCE: 10,
+    SignalType.WALL: 15,
+    SignalType.LIQUIDITY_SHIFT: 8,
+    SignalType.TAPE_SPEED: 5,
+    SignalType.VOLUME_CLUSTER: 7,
+    SignalType.TRADE_VELOCITY: 5,
 }
 
 MAX_SCORE = sum(WEIGHTS.values())  # = 150
 
 # TTL для детекторов (секунды)
 TTL_CONFIG = {
-    "ABSORPTION": 10,
-    "PRICE_RESPONSE": 15,
-    "ICEBERG": 20,
-    "IMBALANCE": 5,
-    "SPOOFING": 8,
-    "DELTA": 30,
-    "WALL": 10,
-    "LIQUIDITY_SHIFT": 5,
-    "TAPE_SPEED": 3,
-    "VOLUME_CLUSTER": 10,
-    "TRADE_VELOCITY": 3,
+    SignalType.ABSORPTION: 10,
+    SignalType.PRICE_RESPONSE: 15,
+    SignalType.ICEBERG: 20,
+    SignalType.IMBALANCE: 5,
+    SignalType.SPOOFING: 8,
+    SignalType.DELTA: 30,
+    SignalType.WALL: 10,
+    SignalType.LIQUIDITY_SHIFT: 5,
+    SignalType.TAPE_SPEED: 3,
+    SignalType.VOLUME_CLUSTER: 10,
+    SignalType.TRADE_VELOCITY: 3,
 }
 
 
@@ -50,11 +67,12 @@ class DetectorRecord:
 
 class DetectorJournal:
     """Журнал детекторов с TTL"""
+    
     def __init__(self):
-        self.detectors: Dict[str, DetectorRecord] = {}
+        self.detectors: Dict[SignalType, DetectorRecord] = {}
         self.bias: float = 0.0
 
-    def set(self, signal_type: str, value: Dict, details: str, direction: str):
+    def set(self, signal_type: SignalType, value: Dict, details: str, direction: str):
         """Установка детектора"""
         self.detectors[signal_type] = DetectorRecord(
             detected=True,
@@ -71,7 +89,7 @@ class DetectorJournal:
         for st, rec in self.detectors.items():
             ttl = TTL_CONFIG.get(st, 10)
             if rec.detected and now - rec.timestamp < ttl:
-                components[st] = {
+                components[st.value] = {
                     "details": rec.details,
                     "direction": rec.direction
                 }
@@ -84,7 +102,7 @@ class DetectorJournal:
         for st, rec in self.detectors.items():
             ttl = TTL_CONFIG.get(st, 10)
             if rec.detected and now - rec.timestamp < ttl:
-                signals.append(f"{st}:{rec.direction}")
+                signals.append(f"{st.value}:{rec.direction}")
         return signals
 
     def calc(self, delta: float) -> int:

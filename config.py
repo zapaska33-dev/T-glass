@@ -54,7 +54,12 @@ TAPE_SPEED_THRESHOLD = int(os.environ.get("TAPE_SPEED_THRESHOLD", "15"))
 ABSORPTION_THRESHOLD = int(os.environ.get("ABSORPTION_THRESHOLD", "2000"))
 BIG_WALL_SIZE = int(os.environ.get("BIG_WALL_SIZE", "5000"))
 SPOOF_SIZE_THRESHOLD = int(os.environ.get("SPOOF_SIZE_THRESHOLD", "3000"))
-ICEBERG_MIN_VOLUME = int(os.environ.get("ICEBERG_MIN_VOLUME", "500"))
+
+# ========== ПОРОГИ ДЛЯ ICEBERG (НАКОПИТЕЛЬНЫЙ) ==========
+ICEBERG_MIN_VOLUME = int(os.environ.get("ICEBERG_MIN_VOLUME", "500"))      # минимальный объем сделки
+ICEBERG_TOTAL_VOLUME = int(os.environ.get("ICEBERG_TOTAL_VOLUME", "3000")) # накопленный объем для сигнала
+ICEBERG_MIN_TRADES = int(os.environ.get("ICEBERG_MIN_TRADES", "8"))        # минимальное кол-во сделок
+
 PRICE_RESPONSE_THRESHOLD = int(os.environ.get("PRICE_RESPONSE_THRESHOLD", "1000"))
 PRICE_TICK = float(os.environ.get("PRICE_TICK", "0.005"))
 
@@ -62,14 +67,13 @@ print("=" * 50)
 print(f"📊 T-GLASS v19.1 | {TICKER}")
 print(f"   DATA_DIR: {DATA_DIR}")
 print(f"   LOGS_DIR: {LOGS_DIR}")
-print(f"   CONFIG_DIR: {CONFIG_DIR}")
 print("-" * 30)
 print(f"   SCORE Required: {SETUP_SCORE_REQUIRED}")
 print(f"   AI Confidence: {AI_CONFIDENCE_REQUIRED}%")
-print(f"   AI Model: {VSEGPT_MODEL if VSEGPT_API_KEY else 'FALLBACK'}")
-print(f"   MAX Bot: {'✅' if MAX_BOT_TOKEN else '❌'}")
+print(f"   AI Cooldown: {AI_COOLDOWN_SECONDS}s")
 print("-" * 30)
-print(f"   MIN_PRINT_VOLUME: {MIN_PRINT_VOLUME}")
+print(f"   ICEBERG_TOTAL_VOLUME: {ICEBERG_TOTAL_VOLUME}")
+print(f"   ICEBERG_MIN_TRADES: {ICEBERG_MIN_TRADES}")
 print(f"   DELTA_THRESHOLD: {DELTA_THRESHOLD}")
 print(f"   TAPE_SPEED_THRESHOLD: {TAPE_SPEED_THRESHOLD}")
 print("=" * 50)
