@@ -4,14 +4,17 @@
 import logging
 import os
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
+import config
 
 
 def setup_logging():
-    """Настройка логирования"""
+    """Настройка логирования с ротацией"""
+    log_dir = config.LOGS_DIR
 
     # Создаем директорию для логов
-    log_dir = '/data/logs'
-    os.makedirs(log_dir, exist_ok=True)
+    log_dir.mkdir(parents=True, exist_ok=True)
 
     # Формат логов
     formatter = logging.Formatter(
@@ -23,9 +26,9 @@ def setup_logging():
     logger = logging.getLogger('tglass')
     logger.setLevel(logging.INFO)
 
-    # Файловый handler с ротацией
+    # Файловый handler с ротацией (10MB, 5 файлов)
     file_handler = RotatingFileHandler(
-        f'{log_dir}/tglass.log',
+        log_dir / 'tglass.log',
         maxBytes=10 * 1024 * 1024,
         backupCount=5
     )
@@ -41,18 +44,18 @@ def setup_logging():
     logger_trade = logging.getLogger('trade')
     logger_trade.setLevel(logging.INFO)
     trade_handler = RotatingFileHandler(
-        f'{log_dir}/trade.log',
+        log_dir / 'trade.log',
         maxBytes=10 * 1024 * 1024,
         backupCount=5
     )
     trade_handler.setFormatter(formatter)
     logger_trade.addHandler(trade_handler)
 
-    # Логгер для AI
+    # AI логгер
     logger_ai = logging.getLogger('ai')
     logger_ai.setLevel(logging.INFO)
     ai_handler = RotatingFileHandler(
-        f'{log_dir}/ai.log',
+        log_dir / 'ai.log',
         maxBytes=10 * 1024 * 1024,
         backupCount=5
     )

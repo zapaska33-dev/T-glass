@@ -1,0 +1,22 @@
+meta:
+  version: "1.0"
+  name: "t-glass"
+  type: "python-app"
+
+build:
+  python: "3.10"
+  requirements: "requirements.txt"
+  platform: "linux/arm64"
+
+run:
+  command: "python t-glass.py"
+  workdir: "/app"
+  ports:
+    - "80:80"
+
+volumes:
+  - "/data"
+
+env:
+  - name: "TRADERNET_TICKER"
+    value: "TECHSMART"

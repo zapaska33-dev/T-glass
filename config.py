@@ -2,6 +2,20 @@
 # -*- coding: utf-8 -*-
 
 import os
+from pathlib import Path
+from platformdirs import user_data_dir, user_log_dir, user_config_dir
+
+APP_NAME = "tglass"
+APP_AUTHOR = "tglass"
+
+# Автоматические пути для разных ОС
+DATA_DIR = Path(user_data_dir(APP_NAME, APP_AUTHOR))
+LOGS_DIR = Path(user_log_dir(APP_NAME, APP_AUTHOR))
+CONFIG_DIR = Path(user_config_dir(APP_NAME, APP_AUTHOR))
+
+# Создаем директории
+for d in [DATA_DIR, LOGS_DIR, CONFIG_DIR]:
+    d.mkdir(parents=True, exist_ok=True)
 
 # ========== TRADERNET ==========
 PUBLIC_KEY = os.environ.get("TRADERNET_PUBLIC_KEY")
@@ -24,8 +38,6 @@ TICKER = os.environ.get("TRADERNET_TICKER", "TECHSMART")
 # ========== THRESHOLDS ==========
 SETUP_SCORE_REQUIRED = int(os.environ.get("SETUP_SCORE_REQUIRED", "40"))
 AI_CONFIDENCE_REQUIRED = int(os.environ.get("AI_CONFIDENCE_REQUIRED", "80"))
-
-# ========== AI COOLDOWN ==========
 AI_COOLDOWN_SECONDS = int(os.environ.get("AI_COOLDOWN_SECONDS", "120"))
 
 # ========== AI THRESHOLDS ==========
@@ -34,7 +46,7 @@ MIN_DELTA_FOR_AI = int(os.environ.get("MIN_DELTA_FOR_AI", "5000"))
 MIN_DELTA_CHANGE_FOR_NEW_AI = int(os.environ.get("MIN_DELTA_CHANGE_FOR_NEW_AI", "3000"))
 MIN_BIAS_CHANGE_FOR_NEW_AI = float(os.environ.get("MIN_BIAS_CHANGE_FOR_NEW_AI", "1.0"))
 
-# ========== ПОРОГИ ==========
+# ========== ПОРОГИ ДЕТЕКТОРОВ ==========
 MIN_PRINT_VOLUME = int(os.environ.get("MIN_PRINT_VOLUME", "500"))
 MIN_DELTA_VOLUME = int(os.environ.get("MIN_DELTA_VOLUME", "200"))
 DELTA_THRESHOLD = int(os.environ.get("DELTA_THRESHOLD", "7000"))
@@ -48,6 +60,10 @@ PRICE_TICK = float(os.environ.get("PRICE_TICK", "0.005"))
 
 print("=" * 50)
 print(f"📊 T-GLASS v19.1 | {TICKER}")
+print(f"   DATA_DIR: {DATA_DIR}")
+print(f"   LOGS_DIR: {LOGS_DIR}")
+print(f"   CONFIG_DIR: {CONFIG_DIR}")
+print("-" * 30)
 print(f"   SCORE Required: {SETUP_SCORE_REQUIRED}")
 print(f"   AI Confidence: {AI_CONFIDENCE_REQUIRED}%")
 print(f"   AI Model: {VSEGPT_MODEL if VSEGPT_API_KEY else 'FALLBACK'}")

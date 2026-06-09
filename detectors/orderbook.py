@@ -2,10 +2,10 @@
 # -*- coding: utf-8 -*-
 
 from typing import Dict, List, Tuple
-import time
 
 
 class OrderbookProcessor:
+    """Обработчик стакана (order book)"""
     def __init__(self, stats=None):
         self.curr_bids: Dict[float, int] = {}
         self.curr_asks: Dict[float, int] = {}
@@ -14,23 +14,18 @@ class OrderbookProcessor:
         self.bid_size: int = 0
         self.ask_size: int = 0
         self.stats = stats
-        self._last_update = 0
 
     def update(self, bids: List[Tuple[float, int]], asks: List[Tuple[float, int]], timestamp: float):
-        """Обновление стакана"""
-        # Сохраняем предыдущее состояние
+        """Обновление стакана (сохраняем предыдущее состояние)"""
         self.prev_bids = self.curr_bids.copy()
         self.prev_asks = self.curr_asks.copy()
 
-        # Обновляем текущее (топ 20 уровней)
+        # Ограничиваем глубину 20 уровнями
         self.curr_bids = {price: size for price, size in bids[:20]}
         self.curr_asks = {price: size for price, size in asks[:20]}
 
-        # Считаем общий объем
         self.bid_size = sum(self.curr_bids.values())
         self.ask_size = sum(self.curr_asks.values())
-
-        self._last_update = timestamp
 
         if self.stats:
             self.stats.book_updates += 1
