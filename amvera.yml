@@ -2,9 +2,9 @@ meta:
   version: "1.0"
   name: "t-glass"
   type: "python-app"
+  toolchain: "python:3.10"
 
 build:
-  python: "3.10"
   requirements: "requirements.txt"
   platform: "linux/arm64"
 
@@ -20,3 +20,5 @@ volumes:
 env:
   - name: "TRADERNET_TICKER"
     value: "TECHSMART"
+  - name: "PYTHONUNBUFFERED"
+    value: "1"
