@@ -6,14 +6,20 @@ import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-import config
-
 
 def setup_logging():
     """Настройка логирования с ротацией"""
-    log_dir = config.LOGS_DIR
-
+    
+    # Пытаемся импортировать config, если нет - используем пути по умолчанию
+    try:
+        import config
+        log_dir = config.LOGS_DIR
+    except (ImportError, AttributeError):
+        # fallback пути
+        log_dir = Path('/data/logs')
+    
     # Создаем директорию для логов
+    log_dir = Path(log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
 
     # Формат логов
