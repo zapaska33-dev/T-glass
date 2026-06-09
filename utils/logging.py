@@ -10,16 +10,8 @@ from pathlib import Path
 def setup_logging():
     """Настройка логирования с ротацией"""
     
-    # Пытаемся импортировать config, если нет - используем пути по умолчанию
-    try:
-        import config
-        log_dir = config.LOGS_DIR
-    except (ImportError, AttributeError):
-        # fallback пути
-        log_dir = Path('/data/logs')
-    
-    # Создаем директорию для логов
-    log_dir = Path(log_dir)
+    # Используем /data/logs для Docker
+    log_dir = Path('/data/logs')
     log_dir.mkdir(parents=True, exist_ok=True)
 
     # Формат логов

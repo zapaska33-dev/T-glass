@@ -1,9 +1,14 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import time
 from enum import Enum
 from dataclasses import dataclass
-from typing import Dict, Any
-import time
+from typing import Dict, List, Optional
+
 
 class SignalType(Enum):
+    """Типы сигналов детекторов"""
     ABSORPTION = "absorption"
     PRICE_RESPONSE = "price_response"
     ICEBERG = "iceberg"
@@ -16,77 +21,137 @@ class SignalType(Enum):
     VOLUME_CLUSTER = "volume_cluster"
     TRADE_VELOCITY = "trade_velocity"
 
-WEIGHTS = {
-    SignalType.ABSORPTION: 35,
-    SignalType.PRICE_RESPONSE: 30,
-    SignalType.ICEBERG: 35,
-    SignalType.IMBALANCE: 25,
-    SignalType.SPOOFING: 40,
-    SignalType.DELTA: 30,
-    SignalType.WALL: 35,
-    SignalType.LIQUIDITY_SHIFT: 30,
-    SignalType.TAPE_SPEED: 15,
-    SignalType.VOLUME_CLUSTER: 20,
-    SignalType.TRADE_VELOCITY: 10,
-}
-MAX_SCORE = sum(WEIGHTS.values())
 
-TTL_CONFIG = {
-    "absorption": 15, "price_response": 10, "iceberg": 30,
-    "imbalance": 5, "spoofing": 10, "delta": 20,
-    "wall": 10, "liquidity_shift": 5, "tape_speed": 3,
-    "volume_cluster": 10, "trade_velocity": 5,
+# Веса детекторов (обновленные для Т-Технологий)
+WEIGHTS = {
+    SignalType.DELTA: 35,              # Поток объема
+    SignalType.SPOOFING: 30,           # Ложные заявки (разворотный)
+    SignalType.ABSORPTION: 25,         # Поглощение объемов
+    SignalType.PRICE_RESPONSE: 20,     # Ценовая реакция
+    SignalType.ICEBERG: 20,            # Айсберг-заявки (накопительный)
+    SignalType.IMBALANCE: 15,          # Дисбаланс стакана
+    SignalType.WALL: 15,               # Крупные стены
+    SignalType.VOLUME_CLUSTER: 15,     # Кластер объемов
+    SignalType.LIQUIDITY_SHIFT: 10,    # Сдвиг ликвидности
+    SignalType.TAPE_SPEED: 10,         # Скорость ленты
+    SignalType.TRADE_VELOCITY: 10,     # Скорость сделок
 }
+
+MAX_SCORE = sum(WEIGHTS.values())  # = 205
+
+# TTL для детекторов (секунды)
+TTL_CONFIG = {
+    SignalType.ABSORPTION: 10,
+    SignalType.PRICE_RESPONSE: 15,
+    SignalType.ICEBERG: 20,
+    SignalType.IMBALANCE: 5,
+    SignalType.SPOOFING: 8,
+    SignalType.DELTA: 30,
+    SignalType.WALL: 10,
+    SignalType.LIQUIDITY_SHIFT: 5,
+    SignalType.TAPE_SPEED: 3,
+    SignalType.VOLUME_CLUSTER: 10,
+    SignalType.TRADE_VELOCITY: 3,
+}
+
 
 @dataclass
-class DetectorStatus:
-    name: str
-    weight: int
+class DetectorRecord:
+    """Запись о срабатывании детектора"""
     detected: bool = False
-    value: Any = None
+    value: Optional[Dict] = None
     details: str = ""
-    timestamp: float = 0
     direction: str = ""
+    timestamp: float = 0
+
 
 class DetectorJournal:
+    """Журнал детекторов с TTL"""
+    
     def __init__(self):
-        self.reset()
-    def reset(self):
-        self.detectors = {st: DetectorStatus(st.value, w) for st, w in WEIGHTS.items()}
-        self.score = 0
-        self.active = 0
-        self.bias = 0.0
-    def set(self, st, value=None, details="", direction=""):
+        self.detectors: Dict[SignalType, DetectorRecord] = {}
+        self.bias: float = 0.0
+
+    def set(self, signal_type: SignalType, value: Dict, details: str, direction: str):
+        """Установка детектора"""
+        self.detectors[signal_type] = DetectorRecord(
+            detected=True,
+            value=value,
+            details=details,
+            direction=direction,
+            timestamp=time.time()
+        )
+
+    def get_components(self) -> Dict:
+        """Получение активных компонентов"""
         now = time.time()
-        self.detectors[st].detected = True
-        self.detectors[st].value = value
-        self.detectors[st].details = details
-        self.detectors[st].timestamp = now
-        self.detectors[st].direction = direction
-    def calc(self, stats_delta=None):
+        components = {}
+        for st, rec in self.detectors.items():
+            ttl = TTL_CONFIG.get(st, 10)
+            if rec.detected and now - rec.timestamp < ttl:
+                components[st.value] = {
+                    "details": rec.details,
+                    "direction": rec.direction,
+                    "weight": WEIGHTS.get(st, 10)
+                }
+        return components
+
+    def get_signals(self) -> List[str]:
+        """Получение списка активных сигналов"""
         now = time.time()
-        self.score = 0
-        self.active = 0
-        bullish = bearish = 0
-        for st, det in self.detectors.items():
-            if not det.detected:
-                continue
-            if now - det.timestamp > TTL_CONFIG.get(st.value, 10):
-                continue
-            self.score += det.weight
-            self.active += 1
-            if det.direction == "BULLISH":
-                bullish += det.weight
-            elif det.direction == "BEARISH":
-                bearish += det.weight
-        self.bias = (bullish - bearish) / 10
-        return self.score
-    def get_components(self):
+        signals = []
+        for st, rec in self.detectors.items():
+            ttl = TTL_CONFIG.get(st, 10)
+            if rec.detected and now - rec.timestamp < ttl:
+                signals.append(f"{st.value}:{rec.direction}")
+        return signals
+
+    def calc(self, delta: float) -> int:
+        """Расчет суммарного веса и смещения (bias)"""
+        total = 0
+        bullish = 0
+        bearish = 0
         now = time.time()
-        return {d.name.lower(): d.weight for d in self.detectors.values()
-                if d.detected and (now - d.timestamp) <= TTL_CONFIG.get(d.name.lower(), 10)}
-    def get_signals(self):
+
+        for st, rec in self.detectors.items():
+            ttl = TTL_CONFIG.get(st, 10)
+            if rec.detected and now - rec.timestamp < ttl:
+                weight = WEIGHTS.get(st, 10)
+                total += weight
+                if rec.direction == "BULLISH":
+                    bullish += weight
+                elif rec.direction == "BEARISH":
+                    bearish += weight
+
+        # Расчет bias в процентах
+        self.bias = (bullish - bearish) / max(total, 1) * 100 if total > 0 else 0
+        return total
+    
+    def get_detailed_score(self) -> Dict:
+        """Получение детальной разбивки по весам"""
         now = time.time()
-        return {d.name.lower(): {"weight": d.weight, "value": d.value, "direction": d.direction}
-                for d in self.detectors.values()
-                if d.detected and (now - d.timestamp) <= TTL_CONFIG.get(d.name.lower(), 10)}
+        result = {
+            "total": 0,
+            "bullish": 0,
+            "bearish": 0,
+            "components": []
+        }
+        
+        for st, rec in self.detectors.items():
+            ttl = TTL_CONFIG.get(st, 10)
+            if rec.detected and now - rec.timestamp < ttl:
+                weight = WEIGHTS.get(st, 10)
+                result["total"] += weight
+                if rec.direction == "BULLISH":
+                    result["bullish"] += weight
+                elif rec.direction == "BEARISH":
+                    result["bearish"] += weight
+                
+                result["components"].append({
+                    "type": st.value,
+                    "weight": weight,
+                    "direction": rec.direction,
+                    "details": rec.details
+                })
+        
+        return result
