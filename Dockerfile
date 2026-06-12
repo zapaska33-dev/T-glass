@@ -4,7 +4,6 @@ LABEL maintainer="T-GLASS Team"
 LABEL version="19.1"
 LABEL description="T-GLASS Order Flow Detector for TECHSMART"
 
-# Установка рабочей директории
 WORKDIR /app
 
 # Установка системных зависимостей
@@ -19,14 +18,16 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# Копирование и установка TraderNet SDK из локального файла
+COPY tradernet_sdk-2.0.0.tar.gz .
+RUN pip install --no-cache-dir ./tradernet_sdk-2.0.0.tar.gz && \
+    rm tradernet_sdk-2.0.0.tar.gz
+
 # Копирование исходного кода
 COPY . .
 
 # Создание директорий для данных и логов
 RUN mkdir -p /data /data/logs
-
-# Настройка прав
-RUN chmod +x t-glass.py
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
