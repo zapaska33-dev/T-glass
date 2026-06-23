@@ -2,40 +2,47 @@ version: '3.8'
 
 services:
   t-glass:
-    build: .
-    container_name: t-glass
+    image: python:3.10-slim
+    container_name: tglass
     restart: unless-stopped
     ports:
       - "19945:80"
     volumes:
-      - app:/data:rw
-      - ./logs:/app/logs:rw
-      - ./tradernet:/app/tradernet:ro  # Монтируем распакованный tradernet SDK
-    env_file:
-      - .env
+      - app:/app
+      - techno5_app-data:/data
     environment:
-      - PORT=80
       - PYTHONUNBUFFERED=1
-      - TRADERNET_TICKER=${TRADERNET_TICKER:-TECHSMART}
-      - MAX_BOT_TOKEN=${MAX_BOT_TOKEN}
-      - MAX_CHAT_ID=${MAX_CHAT_ID}
-      - VSEGPT_API_KEY=${VSEGPT_API_KEY}
-      - TRADERNET_PUBLIC_KEY=${TRADERNET_PUBLIC_KEY}
-      - TRADERNET_PRIVATE_KEY=${TRADERNET_PRIVATE_KEY}
-      - PYTHONPATH=/app:/app/tradernet
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+      - TRADERNET_TICKER=TECHSMART
+    command: >
+      sh -c "
+        pip install aiohttp &&
+        python -c '
+import asyncio
+import os
+from aiohttp import web
+
+TICKER = os.environ.get(\"TRADERNET_TICKER\", \"TECHSMART\")
+
+async def health(request):
+    return web.json_response({\"status\": \"ok\", \"ticker\": TICKER})
+
+async def main():
+    app = web.Application()
+    app.router.add_get(\"/health\", health)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    await web.TCPSite(runner, \"0.0.0.0\", 80).start()
+    print(f\"?? T-GLASS RUNNING | {TICKER}\")
+    await asyncio.Event().wait()
+
+asyncio.run(main())
+'
+      "
 
 volumes:
   app:
     external: true
     name: app
+  techno5_app-data:
+    external: true
+    name: techno5_app-data
