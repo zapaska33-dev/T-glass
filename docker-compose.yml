@@ -10,6 +10,7 @@ services:
     volumes:
       - app:/data:rw
       - ./logs:/app/logs:rw
+      - ./tradernet:/app/tradernet:ro  # Монтируем распакованный tradernet SDK
     env_file:
       - .env
     environment:
@@ -21,6 +22,7 @@ services:
       - VSEGPT_API_KEY=${VSEGPT_API_KEY}
       - TRADERNET_PUBLIC_KEY=${TRADERNET_PUBLIC_KEY}
       - TRADERNET_PRIVATE_KEY=${TRADERNET_PRIVATE_KEY}
+      - PYTHONPATH=/app:/app/tradernet
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health"]
       interval: 30s
