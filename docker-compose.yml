@@ -6,7 +6,7 @@ services:
     container_name: tglass-prod
     restart: unless-stopped
     ports:
-      - "19947:80"
+      - "19945:80"
     volumes:
       - /share/Docker/T-GLASS/app:/app:rw
       - /share/Docker/T-GLASS/data:/data:rw
@@ -45,10 +45,8 @@ services:
         cd /app &&
         pip install --no-cache-dir aiohttp requests python-dotenv platformdirs maxapi &&
         echo '? Зависимости установлены' &&
-        echo '?? Проверка tradernet...' &&
-        python -c 'from tradernet import Core, TradernetWebsocket; print(\"? tradernet OK\")' &&
-        echo '?? Запуск t-glass.py...' &&
-        python t-glass.py
+        echo '?? Запуск start.py...' &&
+        python start.py
       "
     logging:
       driver: "json-file"
