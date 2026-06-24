@@ -15,6 +15,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# Проверка установки
+RUN pip list
+
 # Копирование всего проекта (включая папку tradernet)
 COPY . .
 
