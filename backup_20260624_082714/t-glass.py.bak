@@ -3,90 +3,41 @@
 
 """
 T-GLASS ORDER FLOW DETECTOR v19.1
-С поддержкой локального tradernet
+РЕАЛЬНАЯ ВЕРСИЯ с подключением к TraderNet
 """
 
 import sys
 import os
+import asyncio
+import time
+import uuid
+import json
+from collections import deque
+from datetime import datetime
 
-# ========== НАСТРОЙКА ПУТЕЙ ==========
-# Добавляем пути для поиска модулей
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, PROJECT_ROOT)
-sys.path.insert(0, os.path.join(PROJECT_ROOT, 'tradernet'))
-
-# Устанавливаем PYTHONPATH
-os.environ['PYTHONPATH'] = f"{PROJECT_ROOT}:{PROJECT_ROOT}/tradernet"
-
-print(f"📁 PROJECT_ROOT: {PROJECT_ROOT}")
-print(f"📁 PYTHONPATH: {os.environ.get('PYTHONPATH', 'Not set')}")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # ========== ИМПОРТЫ ==========
 try:
     from maxapi import Bot
     MAX_AVAILABLE = True
-    print("✅ maxapi imported")
 except ImportError:
     MAX_AVAILABLE = False
-    print("⚠️ maxapi not found")
     class Bot:
         def __init__(self, token=None):
             self.token = token
         async def send_message(self, user_id, text):
             print(f"📤 [STUB] Send to {user_id}: {text[:100]}...")
 
-# Импортируем tradernet из локальной папки
+# Импортируем реальный tradernet
 try:
     from tradernet import Core, TradernetWebsocket
     TRADERNET_AVAILABLE = True
-    print("✅ tradernet imported from local folder")
-except ImportError as e:
+    print("✅ Real tradernet imported")
+except ImportError:
     TRADERNET_AVAILABLE = False
-    print(f"❌ tradernet import error: {e}")
-    
-    # Заглушка для tradernet
-    class Core:
-        def __init__(self, public_key=None, private_key=None):
-            self.public_key = public_key
-            self.private_key = private_key
-            print("⚠️ TraderNet Core stub")
-    
-    class TradernetWebsocket:
-        def __init__(self, core=None):
-            self.core = core
-            print("⚠️ TraderNet WebSocket stub")
-        
-        async def __aenter__(self):
-            return self
-        
-        async def __aexit__(self, *args):
-            pass
-        
-        async def quotes(self, ticker):
-            import asyncio, random
-            print(f"📡 [SIM] Starting quotes for {ticker}")
-            price = 100.0
-            counter = 0
-            while True:
-                await asyncio.sleep(2)
-                counter += 1
-                price += random.uniform(-0.5, 0.5)
-                yield {
-                    "ltp": round(price, 4),
-                    "lts": random.randint(100, 3000),
-                    "trades": counter,
-                    "init": 0
-                }
-        
-        async def market_depth(self, ticker):
-            import asyncio
-            print(f"📚 [SIM] Starting market depth for {ticker}")
-            while True:
-                await asyncio.sleep(1)
-                yield {
-                    "bids": [[100.0, 1000], [99.5, 2000]],
-                    "asks": [[100.5, 1500], [101.0, 2500]]
-                }
+    print("❌ ERROR: tradernet not found! Please install tradernet SDK")
+    sys.exit(1)
 
 import config
 from utils.logging import setup_logging
@@ -98,15 +49,10 @@ from detectors import (
     TapeSpeedDetector, DeltaTracker, DetectorJournal, SignalType, MAX_SCORE
 )
 
-# ========== КОНСТАНТЫ ==========
-WEBSOCKET_RECONNECT_DELAY = 1
-WEBSOCKET_MAX_RECONNECT_DELAY = 60
-WEBSOCKET_RECONNECT_MULTIPLIER = 2
-
 # ========== ИНИЦИАЛИЗАЦИЯ ЛОГОВ ==========
 logger, logger_trade, logger_ai = setup_logging()
-logger.warning(f"🚀 T-GLASS v19.1 START | pid={os.getpid()} | ticker={config.TICKER}")
-logger.warning(f"   TraderNet: {'✅ REAL' if TRADERNET_AVAILABLE else '⚠️ SIMULATION'}")
+logger.warning(f"🚀 T-GLASS v19.1 REAL MODE START | pid={os.getpid()} | ticker={config.TICKER}")
+logger.warning(f"   TraderNet: ✅ REAL CONNECTION")
 logger.warning(f"   MAX Bot: {'✅ AVAILABLE' if MAX_AVAILABLE else '⚠️ STUB'}")
 logger.warning("=" * 50)
 
@@ -127,6 +73,10 @@ processed_trades_cache = set()
 CACHE_MAX_SIZE = 10000
 shutdown_flag = False
 
+# Счетчик переподключений
+reconnect_attempts = 0
+MAX_RECONNECT_ATTEMPTS = 10
+
 
 class Stats:
     def __init__(self):
@@ -141,6 +91,7 @@ class Stats:
         self.delta = 0
         self.duplicates_skipped = 0
         self.total_cost = 0.0
+        self.reconnects = 0
 
 
 stats = Stats()
@@ -493,18 +444,22 @@ async def send_signal(price, volume, score, delta, bias, res):
         logger_ai.info(f"✅ AI RESPONSE | {res.direction} | conf={res.confidence}% | {res.reason}")
 
 
-# ========== WEBSOCKET ==========
+# ========== WEBSOCKET РЕАЛЬНОЕ ПОДКЛЮЧЕНИЕ ==========
 
 async def websocket_loop():
-    global core, shutdown_flag
-    logger.info(f"Connecting to ticker: [{config.TICKER}]")
+    """WebSocket цикл с автоматическим reconnect для реального TraderNet"""
+    global core, shutdown_flag, reconnect_attempts, stats
+    logger.info(f"🌐 Connecting to TraderNet WebSocket for [{config.TICKER}]")
     reconnect_delay = 1
 
     while not shutdown_flag:
         try:
-            async with TradernetWebsocket(core=core) as ws:
-                logger.info(f"✅ WebSocket connected for {config.TICKER}")
+            # Реальное подключение к TraderNet
+            async with TradernetWebsocket(core) as ws:
+                logger.info(f"✅ WebSocket connected to {config.TICKER}")
+                reconnect_attempts = 0
                 reconnect_delay = 1
+                stats.reconnects = 0
 
                 async def handle_trades():
                     try:
@@ -539,8 +494,16 @@ async def websocket_loop():
             break
         except Exception as e:
             if not shutdown_flag:
+                reconnect_attempts += 1
+                stats.reconnects += 1
                 logger.error(f"❌ WebSocket error: {type(e).__name__}: {e}")
-                logger.info(f"🔄 Reconnecting in {reconnect_delay} seconds...")
+                
+                if reconnect_attempts >= MAX_RECONNECT_ATTEMPTS:
+                    logger.error(f"❌ Max reconnect attempts ({MAX_RECONNECT_ATTEMPTS}) reached. Exiting...")
+                    shutdown_flag = True
+                    break
+                
+                logger.info(f"🔄 Reconnect attempt {reconnect_attempts}/{MAX_RECONNECT_ATTEMPTS} in {reconnect_delay}s...")
                 await asyncio.sleep(reconnect_delay)
                 reconnect_delay = min(reconnect_delay * 2, 60)
 
@@ -548,6 +511,7 @@ async def websocket_loop():
 # ========== HEALTH CHECK ==========
 
 async def health_server():
+    """Health check сервер"""
     try:
         from aiohttp import web
 
@@ -565,7 +529,8 @@ async def health_server():
                 "duplicates": stats.duplicates_skipped,
                 "uptime": time.time() - stats.start,
                 "current_score": detailed["total"],
-                "active_detectors": len(detailed["components"])
+                "active_detectors": len(detailed["components"]),
+                "reconnects": stats.reconnects
             })
 
         app = web.Application()
@@ -597,7 +562,7 @@ async def stats_loop():
         logger.info(f"📊 STATS | uptime={rt}s | trades={stats.trades} | book={stats.book_updates} | "
                     f"delta={stats.delta:+,} | qualified={stats.qualified} | alerts={stats.alerts} | "
                     f"ai_req={stats.ai_req} ai_ok={stats.ai_ok} ai_no={stats.ai_no} | "
-                    f"DUP={stats.duplicates_skipped} | cost=${stats.total_cost:.6f}")
+                    f"DUP={stats.duplicates_skipped} | reconnects={stats.reconnects} | cost=${stats.total_cost:.6f}")
         
         if detailed["components"]:
             logger.info(f"   📊 ACTIVE: {len(detailed['components'])} | Score={detailed['total']} | "
@@ -610,27 +575,25 @@ async def main():
     global bot, core, command_handler, global_journal, shutdown_flag
 
     logger.warning("=" * 50)
-    logger.warning(f"🚀 T-GLASS v19.1 | {config.TICKER}")
+    logger.warning(f"🚀 T-GLASS v19.1 REAL MODE | {config.TICKER}")
     logger.warning(f"   SCORE Required: {getattr(config, 'SETUP_SCORE_REQUIRED', 70)}")
     logger.warning(f"   AI Confidence: {getattr(config, 'AI_CONFIDENCE_REQUIRED', 75)}%")
     logger.warning(f"   AI Cooldown: {getattr(config, 'AI_COOLDOWN_SECONDS', 30)}s")
     logger.warning(f"   Max Score: {MAX_SCORE}")
-    logger.warning(f"   TraderNet: {'✅ REAL' if TRADERNET_AVAILABLE else '⚠️ SIMULATION'}")
+    logger.warning(f"   Mode: {'✅ REAL' if TRADERNET_AVAILABLE else '❌ SIMULATION'}")
     logger.warning("=" * 50)
 
     global_journal = DetectorJournal()
 
-    # Инициализация TraderNet Core
+    # Инициализация TraderNet Core (РЕАЛЬНЫЙ)
     try:
+        logger.info("🔑 Initializing TraderNet Core with provided keys...")
         core = Core(config.PUBLIC_KEY, config.PRIVATE_KEY)
-        logger.info("✅ TraderNet Core initialized")
+        logger.info("✅ TraderNet Core initialized successfully")
     except Exception as e:
         logger.error(f"❌ Core init failed: {e}")
-        if not TRADERNET_AVAILABLE:
-            logger.warning("⚠️ Continuing in simulation mode...")
-            core = Core(None, None)
-        else:
-            raise
+        logger.error("Please check your TRADERNET_PUBLIC_KEY and TRADERNET_PRIVATE_KEY")
+        sys.exit(1)
 
     # Инициализация MAX Bot
     try:
@@ -655,12 +618,12 @@ async def main():
             if chat_id:
                 await bot.send_message(
                     user_id=chat_id,
-                    text=f"🟢 **T-GLASS v19.1**\n"
+                    text=f"🟢 **T-GLASS v19.1 REAL MODE**\n"
                          f"📊 Тикер: {config.TICKER}\n"
                          f"🎯 Score порог: {getattr(config, 'SETUP_SCORE_REQUIRED', 70)}\n"
                          f"⚡ Max Score: {MAX_SCORE}\n"
                          f"⏱️ AI Cooldown: {getattr(config, 'AI_COOLDOWN_SECONDS', 30)}с\n"
-                         f"🔄 Режим: {'SIMULATION' if not TRADERNET_AVAILABLE else 'REAL'}\n\n"
+                         f"🔄 Режим: ✅ REAL\n\n"
                          f"📝 /help - список команд"
                 )
                 logger.info("✅ Welcome message sent")
