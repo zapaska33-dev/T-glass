@@ -37,7 +37,7 @@ services:
       - ICEBERG_MIN_TRADES=8
       - PRICE_RESPONSE_THRESHOLD=400
       - PRICE_TICK=0.005
-    command: sh /app/start.sh
+    command: /app/start.sh
     logging:
       driver: "json-file"
       options:
