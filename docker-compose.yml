@@ -1,33 +1,57 @@
-cat > docker-compose.yml << 'EOF'
 version: '3.8'
 
 services:
   t-glass:
-    image: python:3.10-slim
-    container_name: tglass
+    image: zapaska33/zapaska33:latest
+    container_name: tglass-prod
     restart: unless-stopped
     ports:
-      - "19945:80"
+      - "19947:80"
     volumes:
-      - app:/app
-      - techno5_app-data:/data
-      - ./t-glass.py:/app/t-glass.py:ro
-      - ./config.py:/app/config.py:ro
+      - /share/Docker/T-GLASS/app:/app:rw
+      - /share/Docker/T-GLASS/data:/data:rw
+      - /share/Docker/T-GLASS/logs:/data/logs:rw
+    working_dir: /app
     environment:
       - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app:/app/tradernet
       - TRADERNET_TICKER=TECHSMART
+      - TRADERNET_PUBLIC_KEY=${TRADERNET_PUBLIC_KEY}
+      - TRADERNET_PRIVATE_KEY=${TRADERNET_PRIVATE_KEY}
+      - MAX_BOT_TOKEN=${MAX_BOT_TOKEN}
+      - MAX_CHAT_ID=${MAX_CHAT_ID}
+      - VSEGPT_API_KEY=${VSEGPT_API_KEY}
+      - SETUP_SCORE_REQUIRED=70
+      - AI_CONFIDENCE_REQUIRED=75
+      - AI_COOLDOWN_SECONDS=30
+      - MIN_BIAS_FOR_AI=2
+      - MIN_DELTA_FOR_AI=2500
+      - DELTA_THRESHOLD=2500
+      - MIN_PRINT_VOLUME=250
+      - MIN_DELTA_VOLUME=100
+      - TAPE_SPEED_THRESHOLD=15
+      - ABSORPTION_THRESHOLD=800
+      - BIG_WALL_SIZE=1500
+      - SPOOF_SIZE_THRESHOLD=1000
+      - ICEBERG_MIN_VOLUME=500
+      - ICEBERG_TOTAL_VOLUME=3000
+      - ICEBERG_MIN_TRADES=8
+      - PRICE_RESPONSE_THRESHOLD=400
+      - PRICE_TICK=0.005
     command: >
       sh -c "
-        pip install aiohttp &&
+        export PYTHONPATH=/app:/app/tradernet &&
+        echo '?? PYTHONPATH='$PYTHONPATH &&
         cd /app &&
+        pip install --no-cache-dir aiohttp requests python-dotenv platformdirs maxapi &&
+        echo '? Зависимости установлены' &&
+        echo '?? Проверка tradernet...' &&
+        python -c 'from tradernet import Core, TradernetWebsocket; print(\"? tradernet OK\")' &&
+        echo '?? Запуск t-glass.py...' &&
         python t-glass.py
       "
-
-volumes:
-  app:
-    external: true
-    name: app
-  techno5_app-data:
-    external: true
-    name: techno5_app-data
-EOF
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
