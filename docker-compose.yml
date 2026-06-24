@@ -2,15 +2,14 @@ version: '3.8'
 
 services:
   t-glass:
-    image: zapaska33/zapaska33:latest
+    image: zapaska33/t-glass:latest
     container_name: tglass-prod
     restart: unless-stopped
     ports:
       - "19947:80"
     volumes:
       - /share/Docker/T-GLASS/app:/app:rw
-      - /share/Docker/T-GLASS/data:/data:rw
-      - /share/Docker/T-GLASS/logs:/data/logs:rw
+      - data:/data:rw
     working_dir: /app
     environment:
       - PYTHONUNBUFFERED=1
@@ -44,3 +43,8 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  data:
+    external: true
+    name: data
