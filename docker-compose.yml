@@ -38,24 +38,7 @@ services:
       - ICEBERG_MIN_TRADES=8
       - PRICE_RESPONSE_THRESHOLD=400
       - PRICE_TICK=0.005
-    command: >
-      sh -c '
-        export PYTHONPATH=/app:/app/tradernet &&
-        echo "?? PYTHONPATH=$PYTHONPATH" &&
-        cd /app &&
-        pip install --no-cache-dir aiohttp requests python-dotenv platformdirs maxapi &&
-        echo "? Зависимости установлены" &&
-        echo "?? Проверка импорта tradernet..." &&
-        python -c "
-import sys
-sys.path.insert(0, \"/app\")
-sys.path.insert(0, \"/app/tradernet\")
-from tradernet import Core, TradernetWebsocket
-print(\"? tradernet импортирован успешно\")
-" &&
-        echo "?? Запуск t-glass.py..." &&
-        python t-glass.py
-      '
+    command: sh /app/start.sh
     logging:
       driver: "json-file"
       options:
